@@ -43,6 +43,9 @@ export interface IfcPropertyRequirement {
   category: PropertyCategory
   /** Si es indispensable desde etapas tempranas (NDI-1) u opcional/de detalle (NDI-2+). */
   required: boolean
+  /** Trazabilidad a la Matriz PlanBIM: TDI/NDI reales, o 'N/A' para propiedades agregadas a mano (fuera del recorte DC/DB). */
+  tdi: string
+  ndi: string
 }
 
 /** Material exigido como requisito, con valor esperado opcional. */
@@ -149,7 +152,9 @@ function toIfcPropertyRequirement(ifcClass: string, prop: MatrixProperty): IfcPr
     label: prop.spanish,
     category: prop.category,
     // NDI-1 = información mínima obligatoria; NDI-2 en adelante = detalle adicional/opcional.
-    required: prop.ndi === 'NDI-1'
+    required: prop.ndi === 'NDI-1',
+    tdi: prop.tdi,
+    ndi: prop.ndi
   }
 }
 
@@ -162,7 +167,9 @@ function mechanicalPropertiesForDD(): IfcPropertyRequirement[] {
       dataType: 'IfcPressureMeasure',
       label: 'Límite elástico del material',
       category: 'resistencia',
-      required: false
+      required: false,
+      tdi: 'N/A',
+      ndi: 'N/A'
     },
     {
       propertySet: 'Pset_MaterialMechanical',
@@ -170,7 +177,9 @@ function mechanicalPropertiesForDD(): IfcPropertyRequirement[] {
       dataType: 'IfcModulusOfElasticityMeasure',
       label: 'Módulo de elasticidad',
       category: 'resistencia',
-      required: false
+      required: false,
+      tdi: 'N/A',
+      ndi: 'N/A'
     }
   ]
 }

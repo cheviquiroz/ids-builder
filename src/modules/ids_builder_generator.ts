@@ -37,13 +37,6 @@ const PHASE_LABELS: Record<string, string> = {
   DD: 'Proyecto Ejecutivo / Diseño Detallado'
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  calculista: 'Ingeniero Cálculista / Estructural',
-  constructor: 'Constructor / Maestro Mayor',
-  supervisor: 'Supervisor de Obras',
-  autoridades: 'Municipalidad / Autoridades'
-}
-
 /** Nombre humano del tipo de proyecto (uso del edificio). Reutilizable por otros generadores de documentos. */
 export function getProjectTypeLabel(projectType?: string): string {
   return projectType ? (PROJECT_TYPE_LABELS[projectType] ?? projectType) : 'No definido'
@@ -108,17 +101,13 @@ export function generateIdsXml(answers: Answers): string {
   const projectTypeLabel = getProjectTypeLabel(answers.projectType)
   const systemLabel = getStructuralSystemLabel(answers.structuralSystem)
   const phaseLabel = getPhaseLabel(answers.projectPhase)
-  const roles = (answers.reviewRoles ?? []).map((r) => ROLE_LABELS[r] ?? r)
 
   const title = `IDS - Estructura (${systemLabel})`
   const description = [
     `Tipo de proyecto: ${projectTypeLabel}.`,
     `Sistema estructural: ${systemLabel}.`,
-    `Fase: ${phaseLabel}.`,
-    roles.length > 0 ? `Roles de revisión: ${roles.join(', ')}.` : null
-  ]
-    .filter(Boolean)
-    .join(' ')
+    `Fase: ${phaseLabel}.`
+  ].join(' ')
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -241,9 +230,14 @@ export interface FriendlyEntity {
   description: string
 }
 
-/** Propiedad exigida en lenguaje humano, agrupada por categoría. El campo `ifc` es solo trazabilidad interna. */
+/**
+ * Propiedad exigida en lenguaje humano. `technicalName` es el nombre IFC
+ * real (p.ej. "Slope", "Height"): se muestra en gris/monospace junto al
+ * nombre en español, nunca solo. El campo `ifc` es trazabilidad interna.
+ */
 export interface FriendlyProperty {
   spanishName: string
+  technicalName: string
   category: string
   required: boolean
   ifc: string
@@ -251,31 +245,26 @@ export interface FriendlyProperty {
 
 export interface HumanFriendlyMapping {
   entities: FriendlyEntity[]
-  properties: FriendlyProperty[]
+  /** Propiedades de cada entidad, indexadas por su ifcClass (p.ej. "IFCCOLUMN"). */
+  propertiesByEntity: Record<string, FriendlyProperty[]>
 }
 
 /**
  * Traduce el mapeo IFC (entidades + propiedades) a lenguaje 100% humano, sin
- * jerga BIM. Las propiedades viven por entidad (cada tipo de elemento tiene
- * las suyas, según la Matriz PlanBIM); acá se combinan en una única lista
- * deduplicada para la vista general "qué debe contener el modelo".
+ * jerga BIM. Cada entidad conserva sus propias propiedades (según la Matriz
+ * PlanBIM), para poder agruparlas en la UI como Entidad → Categoría → Propiedad.
  */
 export function getHumanFriendlyMapping(mapping: MappingResult): HumanFriendlyMapping {
-  const seen = new Set<string>()
-  const properties: FriendlyProperty[] = []
+  const propertiesByEntity: Record<string, FriendlyProperty[]> = {}
 
   mapping.entities.forEach((entity) => {
-    entity.properties.forEach((prop) => {
-      const key = `${prop.propertySet}.${prop.baseName}`
-      if (seen.has(key)) return
-      seen.add(key)
-      properties.push({
-        spanishName: prop.label,
-        category: CATEGORY_LABELS[prop.category],
-        required: prop.required,
-        ifc: key
-      })
-    })
+    propertiesByEntity[entity.ifcClass] = entity.properties.map((prop) => ({
+      spanishName: prop.label,
+      technicalName: prop.baseName,
+      category: CATEGORY_LABELS[prop.category],
+      required: prop.required,
+      ifc: `${prop.propertySet}.${prop.baseName}`
+    }))
   })
 
   return {
@@ -284,7 +273,7 @@ export function getHumanFriendlyMapping(mapping: MappingResult): HumanFriendlyMa
       ifc: entity.ifcClass,
       description: entity.predefinedType ? `Tipo: ${entity.predefinedType}` : ''
     })),
-    properties
+    propertiesByEntity
   }
 }
 
@@ -293,19 +282,13 @@ export interface PreviewData {
   system: string
   phase: string
   entities: FriendlyEntity[]
-  propsByCategory: Record<string, FriendlyProperty[]>
+  propertiesByEntity: Record<string, FriendlyProperty[]>
   validations: string[]
 }
 
 /** Construye una vista legible (sin IFC/PropertySet/XML) del documento a partir del mapeo y las respuestas. */
 export function getIDSPreviewData(mapping: MappingResult, answers: Answers): PreviewData {
   const friendly = getHumanFriendlyMapping(mapping)
-
-  const propsByCategory: Record<string, FriendlyProperty[]> = {}
-  friendly.properties.forEach((prop) => {
-    const list = propsByCategory[prop.category] ?? (propsByCategory[prop.category] = [])
-    list.push(prop)
-  })
 
   const validations: string[] = []
   ;(answers.regulation ?? []).forEach((regulation) => {
@@ -321,7 +304,7 @@ export function getIDSPreviewData(mapping: MappingResult, answers: Answers): Pre
     system: getStructuralSystemLabel(answers.structuralSystem),
     phase: getPhaseLabel(answers.projectPhase),
     entities: friendly.entities,
-    propsByCategory,
+    propertiesByEntity: friendly.propertiesByEntity,
     validations
   }
 }

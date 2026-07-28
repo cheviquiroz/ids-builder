@@ -20,18 +20,39 @@ function escapeHtml(value: string): string {
 }
 
 function buildAnexoHtml(doc: AnexoDocument, fileTitle: string): string {
-  const rows = doc.elements
-    .flatMap((element) =>
-      element.properties.map(
-        (prop) => `
-          <tr>
-            <td>${escapeHtml(element.name)}</td>
-            <td>${escapeHtml(prop.spanish)}</td>
-            <td>${escapeHtml(prop.category)}</td>
-            <td>${prop.required ? 'Sí' : 'No'}</td>
-          </tr>`
-      )
-    )
+  const elementSections = doc.elements
+    .map((element) => {
+      const rows = element.properties
+        .map(
+          (prop) => `
+              <tr>
+                <td>${escapeHtml(prop.spanish)}</td>
+                <td class="ifc-code"><code>${escapeHtml(prop.technicalName)}</code></td>
+                <td class="ifc-code"><code>${escapeHtml(prop.propertySet)}</code></td>
+                <td>${escapeHtml(prop.tdi)}</td>
+                <td>${escapeHtml(prop.ndi)}</td>
+                <td class="${prop.required ? 'required' : 'optional'}">${prop.required ? '✓ Sí' : '○ No'}</td>
+              </tr>`
+        )
+        .join('')
+
+      return `
+        <h3>🏗️ ${escapeHtml(element.name)}</h3>
+        <div class="ifc-code"><strong>Entidad IFC:</strong> <code>${escapeHtml(element.ifcClass)}</code></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Propiedad (Español)</th>
+              <th>Atributo / Parámetro IFC</th>
+              <th>PropertySet</th>
+              <th>TDI</th>
+              <th>NDI</th>
+              <th>Requerida</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`
+    })
     .join('')
 
   const regulations =
@@ -43,43 +64,50 @@ function buildAnexoHtml(doc: AnexoDocument, fileTitle: string): string {
     <meta charset="utf-8" />
     <title>${escapeHtml(fileTitle)}</title>
     <style>
-      body { font-family: Arial, Helvetica, sans-serif; color: #111827; padding: 32px; }
-      h1 { font-size: 20px; margin-bottom: 4px; }
-      h2 { font-size: 15px; margin-top: 28px; margin-bottom: 8px; color: #1f2937; }
-      .subtitle { color: #374151; font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+      body { font-family: Arial, Helvetica, sans-serif; color: #111827; margin: 20px; line-height: 1.5; }
+      h1 { color: #1f2937; font-size: 20px; margin-bottom: 10px; }
+      .info { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
       .intro { color: #374151; font-size: 13px; margin: 0 0 18px; }
-      .meta { color: #4b5563; font-size: 13px; margin-bottom: 20px; }
-      .meta span { margin-right: 18px; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { border: 1px solid #d1d5db; padding: 6px 10px; text-align: left; }
-      th { background: #f3f4f6; }
+      h2 { color: #059669; font-size: 14px; margin-top: 25px; margin-bottom: 10px; border-bottom: 2px solid #059669; padding-bottom: 5px; }
+      h3 { color: #1f2937; font-size: 13px; margin-top: 15px; margin-bottom: 8px; }
+      .ifc-code { color: #6b7280; font-family: monospace; font-size: 11px; }
+      table { width: 100%; border-collapse: collapse; margin: 10px 0 20px 0; }
+      th { background: #f3f4f6; color: #1f2937; border: 1px solid #d1d5db; padding: 10px; text-align: left; font-weight: bold; font-size: 12px; }
+      td { border: 1px solid #d1d5db; padding: 10px; font-size: 11px; }
+      tr:nth-child(even) { background: #f9fafb; }
+      .required { color: #059669; font-weight: bold; }
+      .optional { color: #9ca3af; }
       ul { margin: 4px 0 0; padding-left: 20px; font-size: 13px; }
-      @media print { body { padding: 0; } }
+      .footer { color: #9ca3af; font-size: 11px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+      @media print { body { margin: 0; } }
     </style>
   </head>
   <body>
     <h1>ANEXO DE INFORMACIÓN BIM</h1>
-    <p class="subtitle">Fase: ${escapeHtml(doc.phase)}</p>
     <p class="intro">
       Este anexo complementa la Solicitud de Información BIM (SDI BIM) y especifica qué información debe
       contener el modelo de estructura para ${escapeHtml(doc.phase)}.
     </p>
-    <div class="meta">
-      <span><strong>Proyecto:</strong> ${escapeHtml(doc.projectInfo.name)}</span>
-      <span><strong>Sistema:</strong> ${escapeHtml(doc.projectInfo.system)}</span>
-      <span><strong>Fecha:</strong> ${escapeHtml(doc.projectInfo.date)}</span>
+    <div class="info">
+      <div><strong>Proyecto:</strong> ${escapeHtml(doc.projectInfo.name)}</div>
+      <div><strong>Fase:</strong> ${escapeHtml(doc.projectInfo.phase)}</div>
+      <div><strong>Sistema Estructural:</strong> ${escapeHtml(doc.projectInfo.system)}</div>
+      <div><strong>Empresa:</strong> ${escapeHtml(doc.projectInfo.company)}</div>
+      <div><strong>Fecha:</strong> ${escapeHtml(doc.projectInfo.date)}</div>
     </div>
 
-    <h2>Elementos Estructurales y Propiedades Requeridas</h2>
-    <table>
-      <thead>
-        <tr><th>Elemento</th><th>Propiedad</th><th>Categoría</th><th>Requerida</th></tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <h2>Especificación Técnica de Información por Entidad</h2>
+    ${elementSections}
 
-    <h2>Normativa y Estándares Aplicables</h2>
+    <h2>Normativas y Estándares Aplicables</h2>
     <ul>${regulations}</ul>
+
+    <div class="footer">
+      <strong>Nota:</strong> Este anexo complementa la Solicitud de Información BIM (SDI BIM) vigente.
+      Especifica qué información estructurada debe contener el modelo 3D para cumplir con los requerimientos
+      de coordinación BIM en fase ${escapeHtml(doc.phase.toLowerCase())}.
+      Las propiedades marcadas con ✓ son obligatorias; las marcadas con ○ son opcionales pero recomendadas.
+    </div>
   </body>
 </html>`
 }

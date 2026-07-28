@@ -14,12 +14,17 @@ export type AnexoCategoria = 'Dimensiones' | 'Materiales' | 'Resistencia' | 'Cla
 
 export interface AnexoPropiedad {
   spanish: string
+  technicalName: string
+  propertySet: string
+  tdi: string
+  ndi: string
   category: AnexoCategoria
   required: boolean
 }
 
 export interface AnexoElemento {
   name: string
+  ifcClass: string
   properties: AnexoPropiedad[]
 }
 
@@ -67,10 +72,15 @@ function elementsFromMapping(
 ): AnexoElemento[] {
   return mapping.entities.map((entity) => ({
     name: entity.label,
+    ifcClass: entity.ifcClass,
     properties: entity.properties
       .filter((prop) => (filter ? filter(prop) : true))
       .map((prop) => ({
         spanish: prop.label,
+        technicalName: prop.baseName,
+        propertySet: prop.propertySet,
+        tdi: prop.tdi,
+        ndi: prop.ndi,
         category: CATEGORY_MAP[prop.category],
         required: prop.required
       }))

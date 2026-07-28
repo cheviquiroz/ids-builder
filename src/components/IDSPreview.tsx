@@ -33,8 +33,6 @@ export default function IDSPreview({ xml, preview, answers, mapping, onRestart }
     }
   }
 
-  const categories = Object.keys(preview.propsByCategory)
-
   return (
     <div className="ids-preview">
       <div className="ids-preview__banner">
@@ -61,22 +59,47 @@ export default function IDSPreview({ xml, preview, answers, mapping, onRestart }
 
       <section className="ids-preview__section">
         <h3>📋 Información Que el Modelo Debe Contener</h3>
-        {categories.length === 0 && <p className="ids-preview__empty">Aún no se definió información requerida.</p>}
-        {categories.map((category) => (
-          <div key={category} className="ids-preview__propset">
-            <h4>{category}</h4>
-            <ul className="ids-preview__list">
-              {preview.propsByCategory[category].map((prop, i) => (
-                <li key={i} className="ids-preview__property">
-                  <span className={`ids-preview__badge ${prop.required ? 'ids-preview__badge--required' : ''}`}>
-                    {prop.required ? '✓' : '○'}
-                  </span>
-                  <span className="ids-preview__property-label">{prop.spanishName}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {preview.entities.length === 0 && <p className="ids-preview__empty">Aún no se definió información requerida.</p>}
+        <div className="ids-preview__entity-groups">
+          {preview.entities.map((entity) => {
+            const properties = preview.propertiesByEntity[entity.ifc] ?? []
+            const byCategory: Record<string, typeof properties> = {}
+            properties.forEach((prop) => {
+              const list = byCategory[prop.category] ?? (byCategory[prop.category] = [])
+              list.push(prop)
+            })
+            const categories = Object.keys(byCategory)
+
+            return (
+              <div key={entity.ifc} className="ids-preview__entity-group">
+                <h4 className="ids-preview__entity-heading">🏗️ {entity.spanishName}</h4>
+                {categories.length === 0 && (
+                  <p className="ids-preview__empty">Sin información definida para este elemento.</p>
+                )}
+                <div className="ids-preview__entity-categories">
+                  {categories.map((category) => (
+                    <div key={category} className="ids-preview__propset">
+                      <h5>{category}</h5>
+                      <ul className="ids-preview__list">
+                        {byCategory[category].map((prop, i) => (
+                          <li key={i} className="ids-preview__property">
+                            <span className={`ids-preview__badge ${prop.required ? 'ids-preview__badge--required' : ''}`}>
+                              {prop.required ? '✓' : '○'}
+                            </span>
+                            <div className="ids-preview__property-text">
+                              <div className="ids-preview__property-label">{prop.spanishName}</div>
+                              <div className="ids-preview__property-technical">{prop.technicalName}</div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       <section className="ids-preview__section">

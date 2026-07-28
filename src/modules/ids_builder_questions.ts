@@ -13,7 +13,6 @@ export interface Answers {
   projectPhase?: ProjectPhase
   structuralSystem?: StructuralSystem
   regulation?: string[]
-  reviewRoles?: string[]
 }
 
 export type QuestionId = keyof Answers
@@ -35,13 +34,7 @@ export interface Question {
   isApplicable: (answers: Answers) => boolean
 }
 
-export const QUESTION_ORDER: QuestionId[] = [
-  'projectType',
-  'projectPhase',
-  'structuralSystem',
-  'regulation',
-  'reviewRoles'
-]
+export const QUESTION_ORDER: QuestionId[] = ['projectType', 'projectPhase', 'structuralSystem', 'regulation']
 
 export const QUESTIONS: Record<QuestionId, Question> = {
   projectType: {
@@ -115,20 +108,6 @@ export const QUESTIONS: Record<QuestionId, Question> = {
       { value: 'oguc', label: 'OGUC - Ordenanza General de Urbanismo y Construcciones' },
       { value: 'nch', label: 'Normas Técnicas Chilenas (NCh)' },
       { value: 'municipales_dom', label: 'Exigencias Municipales / DOM' }
-    ]
-  },
-
-  reviewRoles: {
-    id: 'reviewRoles',
-    title: '¿Quién revisa y valida la información estructural?',
-    helperText: 'Selecciona todos los que apliquen.',
-    type: 'multi',
-    isApplicable: () => true,
-    getOptions: () => [
-      { value: 'calculista', label: 'Ingeniero Cálculista / Estructural' },
-      { value: 'constructor', label: 'Constructor / Maestro Mayor', description: 'Responsable en obra.' },
-      { value: 'supervisor', label: 'Supervisor de Obras' },
-      { value: 'autoridades', label: 'Municipalidad / Autoridades' }
     ]
   }
 }
