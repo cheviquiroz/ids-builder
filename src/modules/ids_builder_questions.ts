@@ -7,7 +7,7 @@ import { getUsesByIDSPhase, type IDSPhase } from '../data/bim-uses-standard'
 
 export type Specialization = 'structure' | 'architecture' | 'mep' | 'other'
 export type StructuralSystem = 'hormigon' | 'acero' | 'mixto' | 'madera'
-export type ProjectPhase = 'DC' | 'DB' | 'DD'
+export type ProjectPhase = 'DC' | 'DA' | 'DB' | 'DD'
 
 export type AnswerValue = string | string[]
 
@@ -183,9 +183,14 @@ export const QUESTIONS: Record<QuestionId, Question> = {
         description: 'Primeras líneas, criterios generales de estructuración.'
       },
       {
+        value: 'DA',
+        label: 'Anteproyecto',
+        description: 'Definición preliminar del proyecto, previa al diseño básico.'
+      },
+      {
         value: 'DB',
-        label: 'Anteproyecto / Diseño Básico',
-        description: 'Definición preliminar, coordinación entre disciplinas.'
+        label: 'Diseño Básico',
+        description: 'Definición técnica, coordinación entre disciplinas.'
       },
       {
         value: 'DD',

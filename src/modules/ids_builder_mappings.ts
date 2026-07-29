@@ -195,11 +195,18 @@ const REDUNDANT_PROPERTY_BY_ENTITY: Partial<Record<string, string[]>> = {
   IFCFOOTING: ['LoadBearing']
 }
 
+/**
+ * La Matriz extraída solo cubre DC/DB: las fases sin datos propios heredan
+ * de la fase real más cercana (DA → DC, como anteproyecto preliminar; DD →
+ * DB, como ya estaba). Ver src/data/bim-uses-standard.ts para el mapeo de
+ * Usos BIM/TDI equivalente.
+ */
+const MATRIX_PHASE_FALLBACK: Partial<Record<string, string>> = { DA: 'DC', DD: 'DB' }
+
 /** Construye, para una entidad y fase dadas, sus propiedades reales desde la Matriz PlanBIM. */
 function buildEntityProperties(ifcClass: string, phase: string, fireRatingRequired: boolean): IfcPropertyRequirement[] {
   const matrixKey = MATRIX_IFC_KEY[ifcClass]
-  // La Matriz extraída solo cubre DC/DB; Diseño Ejecutivo (DD) hereda el detalle de DB como base.
-  const matrixPhase = phase === 'DD' ? 'DB' : phase
+  const matrixPhase = MATRIX_PHASE_FALLBACK[phase] ?? phase
   const redundant = REDUNDANT_PROPERTY_BY_ENTITY[ifcClass] ?? []
 
   const realProperties = matrixKey

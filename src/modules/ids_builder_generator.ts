@@ -38,7 +38,8 @@ const STRUCTURAL_SYSTEM_LABELS: Record<string, string> = {
 
 const PHASE_LABELS: Record<string, string> = {
   DC: 'Idea Inicial / Conceptual',
-  DB: 'Anteproyecto / Diseño Básico',
+  DA: 'Anteproyecto',
+  DB: 'Diseño Básico',
   DD: 'Proyecto Ejecutivo / Diseño Detallado'
 }
 
@@ -278,6 +279,7 @@ const REGULATION_VALIDATION_MESSAGES: Record<string, string> = {
 
 const PHASE_VALIDATION_MESSAGES: Record<string, string> = {
   DC: 'Información mínima para etapa conceptual',
+  DA: 'Información mínima para etapa de anteproyecto',
   DB: 'Información mínima para diseño básico',
   DD: 'Información completa para proyecto ejecutivo'
 }
