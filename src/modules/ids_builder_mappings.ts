@@ -14,6 +14,7 @@
 
 import type { Answers, StructuralSystem } from './ids_builder_questions'
 import { getPropertiesByEtapa, type MatrixProperty } from '../data/planbim-matrix'
+import { getDataTypeForProperty, type IFCDataType } from '../utils/datatypeMapper'
 
 /** Entidad IFC objetivo de una especificación, con su predefinedType opcional. */
 export interface IfcEntityTarget {
@@ -34,11 +35,17 @@ export type PropertyCategory =
   | 'termico'
   | 'cargas'
 
-/** Propiedad IFC (property set) exigida como requisito. */
+/**
+ * Propiedad IFC exigida como requisito. Si `propertySet` es null, se trata
+ * de un atributo nativo IFC (p.ej. Name, PredefinedType) sin PropertySet
+ * real: el generador debe emitirlo como <attribute>, no como <property>
+ * (el esquema IDS 1.0 no permite dataType en <attribute>).
+ */
 export interface IfcPropertyRequirement {
-  propertySet: string
+  propertySet: string | null
   baseName: string
-  dataType: string
+  /** IFC Defined Type en mayúsculas (p.ej. IFCLENGTHMEASURE); null cuando propertySet es null. */
+  dataType: IFCDataType | null
   label: string
   category: PropertyCategory
   /** Si es indispensable desde etapas tempranas (NDI-1) u opcional/de detalle (NDI-2+). */
@@ -115,40 +122,34 @@ const REGULATION_LABELS: Record<string, string> = {
   municipales_dom: 'Exigencias Municipales / DOM'
 }
 
-/** Tipo de dato IFC aproximado según el nombre real de la propiedad (para el XML técnico). */
-const DATA_TYPE_BY_PROPERTY: Record<string, string> = {
-  Height: 'IfcQuantityLength',
-  Length: 'IfcQuantityLength',
-  Width: 'IfcQuantityLength',
-  Depth: 'IfcQuantityLength',
-  NominalThickness: 'IfcQuantityLength',
-  Perimeter: 'IfcQuantityLength',
-  CrossSectionArea: 'IfcQuantityArea',
-  OuterSurfaceArea: 'IfcQuantityArea',
-  GrossSurfaceArea: 'IfcQuantityArea',
-  GrossFootprintArea: 'IfcQuantityArea',
-  GrossSideArea: 'IfcQuantityArea',
-  GrossVolume: 'IfcQuantityVolume',
-  LoadBearing: 'IfcBoolean',
-  IsExternal: 'IfcBoolean',
-  ThermalTransmittance: 'IfcThermalTransmittanceMeasure',
-  Slope: 'IfcPlaneAngleMeasure',
-  PitchAngle: 'IfcPlaneAngleMeasure',
-  YieldStrength: 'IfcPressureMeasure',
-  ElasticModulus: 'IfcModulusOfElasticityMeasure'
-}
+/**
+ * Traduce una propiedad real de la Matriz PlanBIM al requisito interno IFC
+ * que usa el resto de la app. Devuelve null para propiedades que no deben
+ * exigirse como requisito individual:
+ * - "Material" (HasAssociations): ya se cubre con el requisito <material> a
+ *   nivel de entidad, incluirla también como propiedad sería redundante.
+ * - "PredefinedType": validado en la práctica (BIMcollab) como un atributo
+ *   casi siempre presente (toda entidad trae algún valor, aunque sea
+ *   NOTDEFINED), así que exigirlo como requisito no aporta información real.
+ * - Filas sin ningún atributo o propiedad IFC real detrás (la Matriz no
+ *   define ni Pset ni Atributo IFC, así que el nombre "técnico" cayó de
+ *   vuelta al texto en español, p.ej. "Código de sistema de clasificación"):
+ *   confirmado en la práctica (BIMcollab) que un <attribute> con ese nombre
+ *   inventado sí genera error de validación, no hay un atributo IFC real
+ *   que emitir en su lugar.
+ */
+function toIfcPropertyRequirement(prop: MatrixProperty): IfcPropertyRequirement | null {
+  if (prop.english === 'HasAssociations') return null
+  if (prop.english === 'PredefinedType') return null
+  if (!prop.pset && prop.english === prop.spanish) return null
 
-function inferDataType(english: string): string {
-  return DATA_TYPE_BY_PROPERTY[english] ?? 'IfcLabel'
-}
-
-/** Traduce una propiedad real de la Matriz PlanBIM al requisito interno IFC que usa el resto de la app. */
-function toIfcPropertyRequirement(ifcClass: string, prop: MatrixProperty): IfcPropertyRequirement {
-  const shortName = ifcClass.replace('IFC', '')
+  // prop.pset es null cuando el parámetro es un atributo nativo IFC (Name,
+  // PredefinedType, etc.), no una propiedad de un PropertySet real.
+  const propertySet = prop.pset
   return {
-    propertySet: prop.pset ?? `Pset_${shortName.charAt(0)}${shortName.slice(1).toLowerCase()}Common`,
+    propertySet,
     baseName: prop.english,
-    dataType: inferDataType(prop.english),
+    dataType: propertySet ? getDataTypeForProperty(prop.english, propertySet) : null,
     label: prop.spanish,
     category: prop.category,
     // NDI-1 = información mínima obligatoria; NDI-2 en adelante = detalle adicional/opcional.
@@ -164,7 +165,7 @@ function mechanicalPropertiesForDD(): IfcPropertyRequirement[] {
     {
       propertySet: 'Pset_MaterialMechanical',
       baseName: 'YieldStrength',
-      dataType: 'IfcPressureMeasure',
+      dataType: getDataTypeForProperty('YieldStrength', 'Pset_MaterialMechanical'),
       label: 'Límite elástico del material',
       category: 'resistencia',
       required: false,
@@ -174,7 +175,7 @@ function mechanicalPropertiesForDD(): IfcPropertyRequirement[] {
     {
       propertySet: 'Pset_MaterialMechanical',
       baseName: 'ElasticModulus',
-      dataType: 'IfcModulusOfElasticityMeasure',
+      dataType: getDataTypeForProperty('ElasticModulus', 'Pset_MaterialMechanical'),
       label: 'Módulo de elasticidad',
       category: 'resistencia',
       required: false,
@@ -184,14 +185,27 @@ function mechanicalPropertiesForDD(): IfcPropertyRequirement[] {
   ]
 }
 
+/**
+ * Propiedades que son redundantes para ciertas entidades específicas: una
+ * fundación es por definición un elemento portante, así que confirmar
+ * "LoadBearing" en Fundaciones no aporta información real (siempre es true).
+ */
+const REDUNDANT_PROPERTY_BY_ENTITY: Partial<Record<string, string[]>> = {
+  IFCFOOTING: ['LoadBearing']
+}
+
 /** Construye, para una entidad y fase dadas, sus propiedades reales desde la Matriz PlanBIM. */
 function buildEntityProperties(ifcClass: string, phase: string): IfcPropertyRequirement[] {
   const matrixKey = MATRIX_IFC_KEY[ifcClass]
   // La Matriz extraída solo cubre DC/DB; Diseño Ejecutivo (DD) hereda el detalle de DB como base.
   const matrixPhase = phase === 'DD' ? 'DB' : phase
+  const redundant = REDUNDANT_PROPERTY_BY_ENTITY[ifcClass] ?? []
 
   const realProperties = matrixKey
-    ? getPropertiesByEtapa(matrixKey, matrixPhase).map((prop) => toIfcPropertyRequirement(ifcClass, prop))
+    ? getPropertiesByEtapa(matrixKey, matrixPhase)
+        .map((prop) => toIfcPropertyRequirement(prop))
+        .filter((prop): prop is IfcPropertyRequirement => prop !== null)
+        .filter((prop) => !redundant.includes(prop.baseName))
     : []
 
   if (phase === 'DD') {

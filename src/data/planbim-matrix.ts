@@ -281,7 +281,7 @@ export const planbimMatrix: MatrixStructure = {
         },
         {
           "spanish": "Área",
-          "english": "GrossSurfaceArea",
+          "english": "GrossArea",
           "tdi": "TDI-B",
           "ndi": "NDI-1",
           "pset": "Qto_SlabBaseQuantities",

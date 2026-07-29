@@ -77,6 +77,9 @@ export default function IDSQuestionnaire() {
   function handleSingleSelect(id: QuestionId, value: string) {
     const nextAnswers: Answers = { ...answers, [id]: value }
     setAnswers(nextAnswers)
+    // Especialidades distintas de "Estructura" no están soportadas todavía:
+    // se guarda la selección (para reflejarla en el botón) pero no se avanza.
+    if (id === 'specialization' && value !== 'structure') return
     setTimeout(() => advance(nextAnswers), 150)
   }
 
@@ -149,6 +152,21 @@ export default function IDSQuestionnaire() {
 
   const value = answers[currentQuestion.id]
   const options = currentQuestion.getOptions(answers)
+  const isTextQuestion = currentQuestion.type === 'text' || currentQuestion.type === 'email' || currentQuestion.type === 'textarea'
+
+  // La sugerencia (getDefaultValue) se muestra solo como placeholder, nunca
+  // se guarda sola: si el usuario no escribe nada, el XML final arma su
+  // propia descripción con las respuestas completas del cuestionario (más
+  // informativa que esta sugerencia temprana, calculada antes de tener
+  // sistema/tipo de proyecto respondidos).
+  const textValue = isTextQuestion ? (value as string | undefined) ?? '' : ''
+  const textPlaceholder = currentQuestion.getDefaultValue?.(answers) ?? currentQuestion.placeholder
+  const fieldError = isTextQuestion && textValue ? currentQuestion.validate?.(textValue) ?? null : null
+  const isTextAnswerValid = currentQuestion.required === false || (!!textValue.trim() && !fieldError)
+
+  function handleTextChange(nextValue: string) {
+    setAnswer(currentQuestion.id, nextValue)
+  }
 
   return (
     <div className="ids-questionnaire">
@@ -159,44 +177,80 @@ export default function IDSQuestionnaire() {
         <span className="ids-question__step">
           Pregunta {positionAmongApplicable + 1} de {applicableIds.length}
         </span>
-        <h2 className="ids-question__title">{currentQuestion.title}</h2>
+        <h2 className="ids-question__title">
+          {currentQuestion.title}
+          {currentQuestion.required !== false ? ' *' : ''}
+        </h2>
         {currentQuestion.helperText && <p className="ids-question__helper">{currentQuestion.helperText}</p>}
 
-        <div className="ids-options">
-          {options.map((option) => {
-            const isSelected =
-              currentQuestion.type === 'multi'
-                ? ((value as string[] | undefined) ?? []).includes(option.value)
-                : value === option.value
+        {isTextQuestion ? (
+          <div className="ids-text-field">
+            {currentQuestion.type === 'textarea' ? (
+              <textarea
+                className="ids-text-field__input ids-text-field__input--textarea"
+                value={textValue}
+                placeholder={textPlaceholder}
+                rows={4}
+                onChange={(e) => handleTextChange(e.target.value)}
+              />
+            ) : (
+              <input
+                className="ids-text-field__input"
+                type={currentQuestion.type === 'email' ? 'email' : 'text'}
+                value={textValue}
+                placeholder={textPlaceholder}
+                onChange={(e) => handleTextChange(e.target.value)}
+              />
+            )}
+            {fieldError && <p className="ids-text-field__error">{fieldError}</p>}
+          </div>
+        ) : (
+          <div className="ids-options">
+            {options.map((option) => {
+              const isSelected =
+                currentQuestion.type === 'multi'
+                  ? ((value as string[] | undefined) ?? []).includes(option.value)
+                  : value === option.value
 
-            return (
-              <button
-                key={option.value}
-                className={`ids-option ${isSelected ? 'ids-option--selected' : ''}`}
-                onClick={() =>
-                  currentQuestion.type === 'multi'
-                    ? handleMultiToggle(currentQuestion.id, option.value)
-                    : handleSingleSelect(currentQuestion.id, option.value)
-                }
-              >
-                <span className="ids-option__label">{option.label}</span>
-                {option.description && <span className="ids-option__description">{option.description}</span>}
-              </button>
-            )
-          })}
-        </div>
+              return (
+                <button
+                  key={option.value}
+                  className={`ids-option ${isSelected ? 'ids-option--selected' : ''}`}
+                  onClick={() =>
+                    currentQuestion.type === 'multi'
+                      ? handleMultiToggle(currentQuestion.id, option.value)
+                      : handleSingleSelect(currentQuestion.id, option.value)
+                  }
+                >
+                  <span className="ids-option__label">{option.label}</span>
+                  {option.description && <span className="ids-option__description">{option.description}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {currentQuestion.id === 'specialization' && value && value !== 'structure' && (
+          <p className="ids-question__warning">
+            ⚠️ Esta versión solo soporta Estructura. Selecciona Estructura para continuar.
+          </p>
+        )}
 
         <div className="ids-nav">
           <button className="ids-btn ids-btn--ghost" onClick={goBack} disabled={currentPos === 0}>
             ← Atrás
           </button>
-          {currentQuestion.type === 'multi' && (
+          {(currentQuestion.type === 'multi' || isTextQuestion) && (
             <button
               className="ids-btn ids-btn--primary"
               onClick={() => advance(answers)}
-              disabled={!((value as string[] | undefined) ?? []).length}
+              disabled={
+                isTextQuestion
+                  ? !isTextAnswerValid
+                  : currentQuestion.required !== false && !((value as string[] | undefined) ?? []).length
+              }
             >
-              Continuar →
+              {isTextQuestion ? 'Siguiente →' : 'Continuar →'}
             </button>
           )}
         </div>

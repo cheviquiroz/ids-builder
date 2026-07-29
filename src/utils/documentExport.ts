@@ -28,7 +28,7 @@ function buildAnexoHtml(doc: AnexoDocument, fileTitle: string): string {
               <tr>
                 <td>${escapeHtml(prop.spanish)}</td>
                 <td class="ifc-code"><code>${escapeHtml(prop.technicalName)}</code></td>
-                <td class="ifc-code"><code>${escapeHtml(prop.propertySet)}</code></td>
+                <td class="ifc-code"><code>${prop.propertySet ? escapeHtml(prop.propertySet) : '—'}</code></td>
                 <td>${escapeHtml(prop.tdi)}</td>
                 <td>${escapeHtml(prop.ndi)}</td>
                 <td class="${prop.required ? 'required' : 'optional'}">${prop.required ? '✓ Sí' : '○ No'}</td>

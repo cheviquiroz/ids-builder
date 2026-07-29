@@ -15,7 +15,8 @@ export type AnexoCategoria = 'Dimensiones' | 'Materiales' | 'Resistencia' | 'Cla
 export interface AnexoPropiedad {
   spanish: string
   technicalName: string
-  propertySet: string
+  /** null cuando es un atributo nativo IFC sin PropertySet real (p.ej. Name, PredefinedType). */
+  propertySet: string | null
   tdi: string
   ndi: string
   category: AnexoCategoria
@@ -56,13 +57,14 @@ function todayIso(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-function baseProjectInfo(answers: Answers, phase: string, company: string) {
+function baseProjectInfo(answers: Answers, phase: string, fallbackContact: string) {
   return {
     name: getProjectTypeLabel(answers.projectType),
     phase,
     system: getStructuralSystemLabel(answers.structuralSystem),
     date: todayIso(),
-    company
+    // El email del autor sirve como dato de contacto del documento; si no se ingresó, se usa un rótulo genérico.
+    company: answers.authorEmail?.trim() || fallbackContact
   }
 }
 

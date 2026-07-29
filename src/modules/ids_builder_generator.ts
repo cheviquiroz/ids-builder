@@ -8,11 +8,23 @@
 // getIDSPreviewData(), que devuelven texto 100% en español de proyecto.
 
 import type { Answers } from './ids_builder_questions'
+import { isValidEmail } from './ids_builder_questions'
 import type { MappingResult, PropertyCategory } from './ids_builder_mappings'
 import { buildMapping } from './ids_builder_mappings'
+import { getCardinalityForNDI } from '../utils/datatypeMapper'
+
+/** Autor por defecto: debe cumplir el patrón de email exigido por el XSD oficial de IDS 1.0 (`[^@]+@[^\.]+\..+`). */
+const DEFAULT_AUTHOR_EMAIL = 'ids-builder@bwisebim.com'
 
 const IDS_XMLNS = 'http://standards.buildingsmart.org/IDS'
 const IDS_XSD_LOCATION = 'http://standards.buildingsmart.org/IDS/1.0/ids.xsd'
+
+const SPECIALIZATION_LABELS: Record<string, string> = {
+  structure: 'Estructura',
+  architecture: 'Arquitectura',
+  mep: 'MEP (Mecánica, Eléctrica, Plomería)',
+  other: 'Otra especialidad'
+}
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
   vivienda: 'Vivienda',
@@ -35,6 +47,11 @@ const PHASE_LABELS: Record<string, string> = {
   DC: 'Idea Inicial / Conceptual',
   DB: 'Anteproyecto / Diseño Básico',
   DD: 'Proyecto Ejecutivo / Diseño Detallado'
+}
+
+/** Nombre humano de la especialidad. Reutilizable por otros generadores de documentos. */
+export function getSpecializationLabel(specialization?: string): string {
+  return specialization ? (SPECIALIZATION_LABELS[specialization] ?? specialization) : 'No definida'
 }
 
 /** Nombre humano del tipo de proyecto (uso del edificio). Reutilizable por otros generadores de documentos. */
@@ -76,10 +93,21 @@ interface SpecificationXmlOptions {
   requirementLines: string[]
 }
 
+// NOTA sobre el esquema real (verificado contra Schema/ids.xsd y el ejemplo
+// oficial IDS_StructuralSafety.ids de buildingSMART/IDS):
+// - <specification> NO lleva minOccurs/maxOccurs (esos atributos van en
+//   <applicability>, que los referencia vía xs:occurs).
+// - <property> usa <propertySet>/<baseName> como ELEMENTOS hijos (con
+//   <simpleValue>), no como atributos; dataType SÍ es un atributo, y debe
+//   ser un IFC Defined Type real en mayúsculas (p.ej. IFCLABEL).
+// - Los atributos nativos de IFC (Name, PredefinedType, sin PropertySet
+//   real) van como <attribute>, que no admite dataType.
+// - Dentro de <requirements>, el orden declarado es: entity, partOf,
+//   classification, attribute, property, material.
 function buildSpecificationXml({ name, ifcClass, predefinedType, requirementLines }: SpecificationXmlOptions): string {
   const lines: string[] = []
-  lines.push(`${indent(2)}<specification name="${escapeXml(name)}" ifcVersion="IFC4" minOccurs="1" maxOccurs="unbounded">`)
-  lines.push(`${indent(3)}<applicability>`)
+  lines.push(`${indent(2)}<specification name="${escapeXml(name)}" ifcVersion="IFC4">`)
+  lines.push(`${indent(3)}<applicability minOccurs="1" maxOccurs="unbounded">`)
   lines.push(`${indent(4)}<entity>`)
   lines.push(simpleValueTag('name', ifcClass, 5))
   if (predefinedType) {
@@ -98,53 +126,68 @@ function buildSpecificationXml({ name, ifcClass, predefinedType, requirementLine
 export function generateIdsXml(answers: Answers): string {
   const mapping = buildMapping(answers)
 
+  const specializationLabel = getSpecializationLabel(answers.specialization)
   const projectTypeLabel = getProjectTypeLabel(answers.projectType)
   const systemLabel = getStructuralSystemLabel(answers.structuralSystem)
   const phaseLabel = getPhaseLabel(answers.projectPhase)
 
-  const title = `IDS - Estructura (${systemLabel})`
-  const description = [
-    `Tipo de proyecto: ${projectTypeLabel}.`,
-    `Sistema estructural: ${systemLabel}.`,
-    `Fase: ${phaseLabel}.`
-  ].join(' ')
+  const title = answers.idsTitle?.trim() || `IDS - Estructura (${systemLabel})`
+  const authorEmail = answers.authorEmail && isValidEmail(answers.authorEmail) ? answers.authorEmail.trim() : DEFAULT_AUTHOR_EMAIL
+  const description =
+    answers.idsDescription?.trim() ||
+    [
+      `Especialidad: ${specializationLabel}.`,
+      `Tipo de proyecto: ${projectTypeLabel}.`,
+      `Sistema estructural: ${systemLabel}.`,
+      `Fase: ${phaseLabel}.`
+    ].join(' ')
 
   const today = new Date().toISOString().slice(0, 10)
 
   const specifications: string[] = mapping.entities.map((entity) => {
-    const requirementLines: string[] = []
-
-    // Requisito de material, si corresponde.
-    mapping.materials.forEach((material) => {
-      requirementLines.push(`${indent(4)}<material cardinality="required">`)
-      if (material.value) {
-        requirementLines.push(simpleValueTag('value', material.value, 5))
-      }
-      requirementLines.push(`${indent(4)}</material>`)
-    })
-
-    // Requisitos de propiedades (property sets), específicos de esta entidad.
-    entity.properties.forEach((prop) => {
-      requirementLines.push(
-        `${indent(4)}<property propertySet="${escapeXml(prop.propertySet)}" dataType="${escapeXml(prop.dataType)}" cardinality="required">`
-      )
-      requirementLines.push(simpleValueTag('name', prop.baseName, 5))
-      requirementLines.push(`${indent(4)}</property>`)
-    })
+    const classificationLines: string[] = []
+    const attributeLines: string[] = []
+    const propertyLines: string[] = []
+    const materialLines: string[] = []
 
     // Requisitos de clasificación (normativa aplicable).
     mapping.classifications.forEach((classification) => {
-      requirementLines.push(`${indent(4)}<classification cardinality="required">`)
-      requirementLines.push(simpleValueTag('value', classification.value, 5))
-      requirementLines.push(simpleValueTag('system', classification.system, 5))
-      requirementLines.push(`${indent(4)}</classification>`)
+      classificationLines.push(`${indent(4)}<classification cardinality="required">`)
+      classificationLines.push(simpleValueTag('value', classification.value, 5))
+      classificationLines.push(simpleValueTag('system', classification.system, 5))
+      classificationLines.push(`${indent(4)}</classification>`)
+    })
+
+    // Propiedades/atributos de esta entidad, específicos según la Matriz.
+    entity.properties.forEach((prop) => {
+      const cardinality = getCardinalityForNDI(prop.ndi)
+      if (prop.propertySet && prop.dataType) {
+        propertyLines.push(`${indent(4)}<property dataType="${escapeXml(prop.dataType)}" cardinality="${cardinality}">`)
+        propertyLines.push(simpleValueTag('propertySet', prop.propertySet, 5))
+        propertyLines.push(simpleValueTag('baseName', prop.baseName, 5))
+        propertyLines.push(`${indent(4)}</property>`)
+      } else {
+        // Atributo nativo IFC (sin PropertySet real): el esquema no admite dataType en <attribute>.
+        attributeLines.push(`${indent(4)}<attribute cardinality="${cardinality}">`)
+        attributeLines.push(simpleValueTag('name', prop.baseName, 5))
+        attributeLines.push(`${indent(4)}</attribute>`)
+      }
+    })
+
+    // Requisito de material, si corresponde.
+    mapping.materials.forEach((material) => {
+      materialLines.push(`${indent(4)}<material cardinality="required">`)
+      if (material.value) {
+        materialLines.push(simpleValueTag('value', material.value, 5))
+      }
+      materialLines.push(`${indent(4)}</material>`)
     })
 
     return buildSpecificationXml({
       name: entity.label,
       ifcClass: entity.ifcClass,
       predefinedType: entity.predefinedType,
-      requirementLines
+      requirementLines: [...classificationLines, ...attributeLines, ...propertyLines, ...materialLines]
     })
   })
 
@@ -153,10 +196,10 @@ export function generateIdsXml(answers: Answers): string {
     `<ids xmlns="${IDS_XMLNS}" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="${IDS_XMLNS} ${IDS_XSD_LOCATION}">`,
     `${indent(1)}<info>`,
     `${indent(2)}<title>${escapeXml(title)}</title>`,
-    `${indent(2)}<description>${escapeXml(description)}</description>`,
-    `${indent(2)}<author>ids-builder@local</author>`,
-    `${indent(2)}<date>${today}</date>`,
     `${indent(2)}<version>1.0</version>`,
+    `${indent(2)}<description>${escapeXml(description)}</description>`,
+    `${indent(2)}<author>${escapeXml(authorEmail)}</author>`,
+    `${indent(2)}<date>${today}</date>`,
     `${indent(1)}</info>`,
     `${indent(1)}<specifications>`,
     ...specifications,
@@ -263,7 +306,7 @@ export function getHumanFriendlyMapping(mapping: MappingResult): HumanFriendlyMa
       technicalName: prop.baseName,
       category: CATEGORY_LABELS[prop.category],
       required: prop.required,
-      ifc: `${prop.propertySet}.${prop.baseName}`
+      ifc: prop.propertySet ? `${prop.propertySet}.${prop.baseName}` : prop.baseName
     }))
   })
 
