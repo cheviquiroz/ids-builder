@@ -12,6 +12,9 @@ import { isValidEmail } from './ids_builder_questions'
 import type { MappingResult, PropertyCategory } from './ids_builder_mappings'
 import { buildMapping } from './ids_builder_mappings'
 import { getCardinalityForNDI } from '../utils/datatypeMapper'
+import { OGUC_DESTINATIONS } from '../data/oguc-destinations'
+import { deriveOgucFireSafety } from '../utils/ids-derivation'
+import { ALL_BIM_USES, TDI_DEFINITIONS } from '../data/bim-uses-standard'
 
 /** Autor por defecto: debe cumplir el patrón de email exigido por el XSD oficial de IDS 1.0 (`[^@]+@[^\.]+\..+`). */
 const DEFAULT_AUTHOR_EMAIL = 'ids-builder@bwisebim.com'
@@ -24,16 +27,6 @@ const SPECIALIZATION_LABELS: Record<string, string> = {
   architecture: 'Arquitectura',
   mep: 'MEP (Mecánica, Eléctrica, Plomería)',
   other: 'Otra especialidad'
-}
-
-const PROJECT_TYPE_LABELS: Record<string, string> = {
-  vivienda: 'Vivienda',
-  oficinas: 'Oficinas',
-  industrial: 'Industrial',
-  comercial: 'Comercial',
-  educacional: 'Educacional',
-  salud: 'Salud',
-  otro: 'Otro'
 }
 
 const STRUCTURAL_SYSTEM_LABELS: Record<string, string> = {
@@ -54,9 +47,10 @@ export function getSpecializationLabel(specialization?: string): string {
   return specialization ? (SPECIALIZATION_LABELS[specialization] ?? specialization) : 'No definida'
 }
 
-/** Nombre humano del tipo de proyecto (uso del edificio). Reutilizable por otros generadores de documentos. */
-export function getProjectTypeLabel(projectType?: string): string {
-  return projectType ? (PROJECT_TYPE_LABELS[projectType] ?? projectType) : 'No definido'
+/** Nombre humano del destino OGUC (reemplaza al antiguo "tipo de proyecto"). Reutilizable por otros generadores de documentos. */
+export function getOgucDestinationLabel(destination?: string): string {
+  if (!destination) return 'No definido'
+  return OGUC_DESTINATIONS[destination]?.label ?? destination
 }
 
 /** Nombre humano del sistema estructural. Reutilizable por otros generadores de documentos. */
@@ -67,6 +61,19 @@ export function getStructuralSystemLabel(structuralSystem?: string): string {
 /** Nombre humano de la fase del proyecto (DC/DB/DD). Reutilizable por otros generadores de documentos. */
 export function getPhaseLabel(phase?: string): string {
   return phase ? (PHASE_LABELS[phase] ?? phase) : 'No definida'
+}
+
+/** Usos BIM seleccionados (Estándar BIM Tabla 06), en su forma completa (número, etiqueta, TDI). */
+function getSelectedBimUses(answers: Answers) {
+  const selectedIds = answers.bimUses ?? []
+  return ALL_BIM_USES.filter((use) => selectedIds.includes(use.id))
+}
+
+/** Deriva, a partir de los Usos BIM seleccionados, el conjunto de TDI (Tipo de Información) requeridos, ordenados alfabéticamente. */
+function deriveTDIFromSelectedUses(selectedUses: ReturnType<typeof getSelectedBimUses>): string[] {
+  const tdi = new Set<string>()
+  selectedUses.forEach((use) => use.tdiRequired.forEach((t) => tdi.add(t)))
+  return Array.from(tdi).sort()
 }
 
 function escapeXml(value: string): string {
@@ -127,9 +134,12 @@ export function generateIdsXml(answers: Answers): string {
   const mapping = buildMapping(answers)
 
   const specializationLabel = getSpecializationLabel(answers.specialization)
-  const projectTypeLabel = getProjectTypeLabel(answers.projectType)
+  const destinationLabel = getOgucDestinationLabel(answers.ogucDestination)
   const systemLabel = getStructuralSystemLabel(answers.structuralSystem)
   const phaseLabel = getPhaseLabel(answers.projectPhase)
+  const fireSafety = deriveOgucFireSafety(answers.ogucDestination, answers.destinationCondition)
+  const selectedBimUses = getSelectedBimUses(answers)
+  const derivedTDI = deriveTDIFromSelectedUses(selectedBimUses)
 
   const title = answers.idsTitle?.trim() || `IDS - Estructura (${systemLabel})`
   const authorEmail = answers.authorEmail && isValidEmail(answers.authorEmail) ? answers.authorEmail.trim() : DEFAULT_AUTHOR_EMAIL
@@ -137,10 +147,16 @@ export function generateIdsXml(answers: Answers): string {
     answers.idsDescription?.trim() ||
     [
       `Especialidad: ${specializationLabel}.`,
-      `Tipo de proyecto: ${projectTypeLabel}.`,
+      `Destino OGUC: ${destinationLabel}.`,
       `Sistema estructural: ${systemLabel}.`,
-      `Fase: ${phaseLabel}.`
-    ].join(' ')
+      `Fase: ${phaseLabel}.`,
+      fireSafety.fireRatingRequired ? `Resistencia al fuego exigida: ${fireSafety.fireSafetyType}.` : null,
+      fireSafety.verticalSafetyRequired ? 'Requiere zona vertical de seguridad.' : null,
+      selectedBimUses.length ? `Usos BIM: ${selectedBimUses.map((u) => `${u.number}. ${u.label}`).join(', ')}.` : null,
+      derivedTDI.length ? `TDI requeridos: ${derivedTDI.join(', ')}.` : null
+    ]
+      .filter(Boolean)
+      .join(' ')
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -320,6 +336,20 @@ export function getHumanFriendlyMapping(mapping: MappingResult): HumanFriendlyMa
   }
 }
 
+/** Uso BIM seleccionado, en lenguaje humano (para el panel "Usos BIM" del preview). */
+export interface FriendlyBimUse {
+  number: number
+  label: string
+  description: string
+}
+
+/** TDI (Tipo de Información) derivado, en lenguaje humano (para el panel "TDI Requeridos" del preview). */
+export interface FriendlyTDI {
+  id: string
+  label: string
+  description: string
+}
+
 export interface PreviewData {
   projectType: string
   system: string
@@ -327,6 +357,8 @@ export interface PreviewData {
   entities: FriendlyEntity[]
   propertiesByEntity: Record<string, FriendlyProperty[]>
   validations: string[]
+  bimUses: FriendlyBimUse[]
+  tdiRequired: FriendlyTDI[]
 }
 
 /** Construye una vista legible (sin IFC/PropertySet/XML) del documento a partir del mapeo y las respuestas. */
@@ -340,14 +372,33 @@ export function getIDSPreviewData(mapping: MappingResult, answers: Answers): Pre
   if (answers.projectPhase) {
     validations.push(PHASE_VALIDATION_MESSAGES[answers.projectPhase])
   }
+  const fireSafety = deriveOgucFireSafety(answers.ogucDestination, answers.destinationCondition)
+  if (fireSafety.fireRatingRequired) {
+    validations.push(`Resistencia al fuego exigida: ${fireSafety.fireSafetyType} (Destino OGUC)`)
+  }
+  if (fireSafety.verticalSafetyRequired) {
+    validations.push('Requiere zona vertical de seguridad (OGUC)')
+  }
+
+  const selectedBimUses = getSelectedBimUses(answers)
+  const derivedTDI = deriveTDIFromSelectedUses(selectedBimUses)
+  if (derivedTDI.length) {
+    validations.push(`TDI requeridos según Usos BIM: ${derivedTDI.join(', ')}`)
+  }
   validations.push('Validable con herramientas de coordinación BIM')
 
   return {
-    projectType: getProjectTypeLabel(answers.projectType),
+    projectType: getOgucDestinationLabel(answers.ogucDestination),
     system: getStructuralSystemLabel(answers.structuralSystem),
     phase: getPhaseLabel(answers.projectPhase),
     entities: friendly.entities,
     propertiesByEntity: friendly.propertiesByEntity,
-    validations
+    validations,
+    bimUses: selectedBimUses.map((use) => ({ number: use.number, label: use.label, description: use.description })),
+    tdiRequired: derivedTDI.map((id) => ({
+      id,
+      label: TDI_DEFINITIONS[id as keyof typeof TDI_DEFINITIONS]?.label ?? id,
+      description: TDI_DEFINITIONS[id as keyof typeof TDI_DEFINITIONS]?.description ?? ''
+    }))
   }
 }

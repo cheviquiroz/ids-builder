@@ -114,6 +114,35 @@ export default function IDSPreview({ xml, preview, answers, mapping, onRestart }
         </ul>
       </section>
 
+      {preview.bimUses.length > 0 && (
+        <section className="ids-preview__section">
+          <h3>🎯 Usos BIM Seleccionados</h3>
+          <ul className="ids-preview__list">
+            {preview.bimUses.map((use) => (
+              <li key={use.number} className="ids-preview__validation">
+                • {use.number}. {use.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {preview.tdiRequired.length > 0 && (
+        <section className="ids-preview__section">
+          <h3>📚 TDI Derivados Automáticamente</h3>
+          <p className="ids-iso__subtitle">
+            Tipos de Información requeridos según los Usos BIM seleccionados (Total: {preview.tdiRequired.length}):
+          </p>
+          <ul className="ids-preview__list">
+            {preview.tdiRequired.map((tdi) => (
+              <li key={tdi.id} className="ids-preview__validation">
+                {tdi.id}: {tdi.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="ids-preview__info">
         ℹ️ Este documento especifica qué información debe contener tu modelo 3D. Herramientas como Solibri,
         BIMcollab o plugins de Revit/ArchiCAD verifican automáticamente que el modelo cumpla.

@@ -8,7 +8,7 @@
 import type { Answers } from './ids_builder_questions'
 import type { MappingResult, PropertyCategory } from './ids_builder_mappings'
 import { buildMapping } from './ids_builder_mappings'
-import { getPhaseLabel, getProjectTypeLabel, getStructuralSystemLabel } from './ids_builder_generator'
+import { getPhaseLabel, getOgucDestinationLabel, getStructuralSystemLabel } from './ids_builder_generator'
 
 export type AnexoCategoria = 'Dimensiones' | 'Materiales' | 'Resistencia' | 'Clasificación' | 'Carga' | 'Térmico'
 
@@ -59,7 +59,7 @@ function todayIso(): string {
 
 function baseProjectInfo(answers: Answers, phase: string, fallbackContact: string) {
   return {
-    name: getProjectTypeLabel(answers.projectType),
+    name: getOgucDestinationLabel(answers.ogucDestination),
     phase,
     system: getStructuralSystemLabel(answers.structuralSystem),
     date: todayIso(),

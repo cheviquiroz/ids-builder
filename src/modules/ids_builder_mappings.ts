@@ -15,6 +15,7 @@
 import type { Answers, StructuralSystem } from './ids_builder_questions'
 import { getPropertiesByEtapa, type MatrixProperty } from '../data/planbim-matrix'
 import { getDataTypeForProperty, type IFCDataType } from '../utils/datatypeMapper'
+import { deriveOgucFireSafety } from '../utils/ids-derivation'
 
 /** Entidad IFC objetivo de una especificación, con su predefinedType opcional. */
 export interface IfcEntityTarget {
@@ -195,7 +196,7 @@ const REDUNDANT_PROPERTY_BY_ENTITY: Partial<Record<string, string[]>> = {
 }
 
 /** Construye, para una entidad y fase dadas, sus propiedades reales desde la Matriz PlanBIM. */
-function buildEntityProperties(ifcClass: string, phase: string): IfcPropertyRequirement[] {
+function buildEntityProperties(ifcClass: string, phase: string, fireRatingRequired: boolean): IfcPropertyRequirement[] {
   const matrixKey = MATRIX_IFC_KEY[ifcClass]
   // La Matriz extraída solo cubre DC/DB; Diseño Ejecutivo (DD) hereda el detalle de DB como base.
   const matrixPhase = phase === 'DD' ? 'DB' : phase
@@ -206,6 +207,10 @@ function buildEntityProperties(ifcClass: string, phase: string): IfcPropertyRequ
         .map((prop) => toIfcPropertyRequirement(prop))
         .filter((prop): prop is IfcPropertyRequirement => prop !== null)
         .filter((prop) => !redundant.includes(prop.baseName))
+        // Capa aditiva OGUC: si el destino/condición del proyecto no exige
+        // resistencia al fuego, se suprime esta categoría de propiedades
+        // (sin tocar el resto del mapeo real de la Matriz PlanBIM).
+        .filter((prop) => fireRatingRequired || prop.category !== 'fuego')
     : []
 
   if (phase === 'DD') {
@@ -218,6 +223,7 @@ function buildEntityProperties(ifcClass: string, phase: string): IfcPropertyRequ
 export function buildMapping(answers: Answers): MappingResult {
   const system = answers.structuralSystem
   const phase = answers.projectPhase ?? 'DB'
+  const fireSafety = deriveOgucFireSafety(answers.ogucDestination, answers.destinationCondition)
 
   const entities: IfcEntityTarget[] = system
     ? ENTITIES_BY_SYSTEM[system].map((ifcClass) => {
@@ -226,7 +232,7 @@ export function buildMapping(answers: Answers): MappingResult {
           ifcClass,
           predefinedType: base?.predefinedType,
           label: base?.label ?? ifcClass,
-          properties: buildEntityProperties(ifcClass, phase)
+          properties: buildEntityProperties(ifcClass, phase, fireSafety.fireRatingRequired)
         }
       })
     : []

@@ -2,8 +2,10 @@
 // Define el flujo tipo Typeform (una pregunta a la vez) con lógica condicional.
 // Todo el texto aquí es lenguaje de proyecto/obra: sin IFC, PropertySet, XML ni jerga BIM.
 
+import { OGUC_DESTINATIONS, type OgucDestinationId } from '../data/oguc-destinations'
+import { getUsesByIDSPhase, type IDSPhase } from '../data/bim-uses-standard'
+
 export type Specialization = 'structure' | 'architecture' | 'mep' | 'other'
-export type ProjectType = 'vivienda' | 'oficinas' | 'industrial' | 'comercial' | 'educacional' | 'salud' | 'otro'
 export type StructuralSystem = 'hormigon' | 'acero' | 'mixto' | 'madera'
 export type ProjectPhase = 'DC' | 'DB' | 'DD'
 
@@ -16,8 +18,13 @@ export interface Answers {
   idsDescription?: string
 
   specialization?: Specialization
-  projectType?: ProjectType
+  /** Destino del edificio según OGUC Art. 4.2.4 (reemplaza al antiguo "tipo de proyecto"). */
+  ogucDestination?: OgucDestinationId
+  /** Respuesta a la pregunta condicional del destino elegido (p.ej. cantidad de pisos), si aplica. */
+  destinationCondition?: string
   projectPhase?: ProjectPhase
+  /** Usos BIM (Estándar BIM para Proyectos Públicos, Tabla 06) aplicables a este proyecto; determinan el TDI requerido. */
+  bimUses?: string[]
   structuralSystem?: StructuralSystem
   regulation?: string[]
 }
@@ -45,6 +52,8 @@ export function isValidEmail(value: string): boolean {
 export interface Question {
   id: QuestionId
   title: string
+  /** Título dinámico (p.ej. la pregunta condicional del destino OGUC cambia según lo elegido). Si existe, reemplaza a `title`. */
+  getTitle?: (answers: Answers) => string
   helperText?: string
   type: 'single' | 'multi' | 'text' | 'email' | 'textarea'
   /** Si la pregunta debe responderse para poder avanzar. Por defecto true. */
@@ -66,8 +75,10 @@ export const QUESTION_ORDER: QuestionId[] = [
   'authorEmail',
   'idsDescription',
   'specialization',
-  'projectType',
+  'ogucDestination',
+  'destinationCondition',
   'projectPhase',
+  'bimUses',
   'structuralSystem',
   'regulation'
 ]
@@ -104,8 +115,8 @@ export const QUESTIONS: Record<QuestionId, Question> = {
     required: false,
     getDefaultValue: (answers) => {
       const system = QUESTIONS.structuralSystem.getOptions(answers).find((o) => o.value === answers.structuralSystem)
-      const type = QUESTIONS.projectType.getOptions(answers).find((o) => o.value === answers.projectType)
-      return `Especificación para ${system?.label ?? 'Sistema'} - ${type?.label ?? 'Tipo de proyecto'}`
+      const destination = answers.ogucDestination ? OGUC_DESTINATIONS[answers.ogucDestination] : undefined
+      return `Especificación para ${system?.label ?? 'Sistema'} - ${destination?.label ?? 'Destino del proyecto'}`
     },
     isApplicable: () => true,
     getOptions: () => []
@@ -130,21 +141,33 @@ export const QUESTIONS: Record<QuestionId, Question> = {
     ]
   },
 
-  projectType: {
-    id: 'projectType',
-    title: '¿Qué tipo de proyecto estás desarrollando?',
-    helperText: 'Nos ayuda a entender el uso y el contexto normativo de tu proyecto.',
+  ogucDestination: {
+    id: 'ogucDestination',
+    title: '¿Cuál es el destino del edificio según la OGUC?',
+    helperText: 'Art. 4.2.4 OGUC — define las exigencias de resistencia al fuego de tu proyecto.',
     type: 'single',
     isApplicable: () => true,
-    getOptions: () => [
-      { value: 'vivienda', label: 'Vivienda', description: 'Proyecto habitacional, unifamiliar o multifamiliar.' },
-      { value: 'oficinas', label: 'Oficinas', description: 'Edificio corporativo o de oficinas.' },
-      { value: 'industrial', label: 'Industrial', description: 'Naves industriales, bodegas o plantas.' },
-      { value: 'comercial', label: 'Comercial', description: 'Locales comerciales, strip centers o malls.' },
-      { value: 'educacional', label: 'Educacional', description: 'Colegios, universidades o jardines infantiles.' },
-      { value: 'salud', label: 'Salud', description: 'Hospitales, clínicas o centros de salud.' },
-      { value: 'otro', label: 'Otro', description: 'Otro tipo de proyecto.' }
-    ]
+    getOptions: () =>
+      Object.values(OGUC_DESTINATIONS).map((d) => ({ value: d.id, label: d.label, description: d.description }))
+  },
+
+  destinationCondition: {
+    id: 'destinationCondition',
+    title: '',
+    getTitle: (answers) => {
+      const destination = answers.ogucDestination ? OGUC_DESTINATIONS[answers.ogucDestination] : undefined
+      return destination?.conditionalQuestion ?? ''
+    },
+    helperText: 'Afina la exigencia de resistencia al fuego según tu respuesta.',
+    type: 'single',
+    isApplicable: (answers) => {
+      const destination = answers.ogucDestination ? OGUC_DESTINATIONS[answers.ogucDestination] : undefined
+      return !!destination?.conditionalOptions?.length
+    },
+    getOptions: (answers) => {
+      const destination = answers.ogucDestination ? OGUC_DESTINATIONS[answers.ogucDestination] : undefined
+      return (destination?.conditionalOptions ?? []).map((c) => ({ value: c.id, label: c.label }))
+    }
   },
 
   projectPhase: {
@@ -170,6 +193,24 @@ export const QUESTIONS: Record<QuestionId, Question> = {
         description: 'Especificaciones técnicas, detalles constructivos listos para obra.'
       }
     ]
+  },
+
+  bimUses: {
+    id: 'bimUses',
+    title: '¿Qué Usos BIM aplican a este proyecto?',
+    helperText: 'Estándar BIM para Proyectos Públicos (Tabla 06). Cada uso determina el Tipo de Información (TDI) requerido. Selecciona todos los que apliquen.',
+    type: 'multi',
+    required: true,
+    isApplicable: () => true,
+    getOptions: (answers) => {
+      const phase = answers.projectPhase?.toLowerCase() as IDSPhase | undefined
+      const uses = phase ? getUsesByIDSPhase(phase) : []
+      return uses.map((use) => ({
+        value: use.id,
+        label: `${use.number}. ${use.label}`,
+        description: use.description
+      }))
+    }
   },
 
   structuralSystem: {

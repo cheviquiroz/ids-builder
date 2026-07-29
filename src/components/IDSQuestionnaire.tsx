@@ -130,9 +130,10 @@ export default function IDSQuestionnaire() {
             const labels = Array.isArray(value)
               ? value.map((v) => options.find((o) => o.value === v)?.label ?? v)
               : [options.find((o) => o.value === value)?.label ?? value ?? '—']
+            const title = question.getTitle?.(answers) || question.title
             return (
               <li key={id}>
-                <span className="ids-confirm__question">{question.title}</span>
+                <span className="ids-confirm__question">{title}</span>
                 <span className="ids-confirm__answer">→ {labels.join(', ')}</span>
               </li>
             )
@@ -178,7 +179,7 @@ export default function IDSQuestionnaire() {
           Pregunta {positionAmongApplicable + 1} de {applicableIds.length}
         </span>
         <h2 className="ids-question__title">
-          {currentQuestion.title}
+          {currentQuestion.getTitle?.(answers) || currentQuestion.title}
           {currentQuestion.required !== false ? ' *' : ''}
         </h2>
         {currentQuestion.helperText && <p className="ids-question__helper">{currentQuestion.helperText}</p>}
